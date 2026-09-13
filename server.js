@@ -124,5 +124,98 @@ app.get('/api/alerts/:alertId', (req, res) => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Alerte discrète (bouton violet) : un seul SMS à un seul contact choisi,
+// pour un simple inconfort qui ne justifie pas la procédure d'urgence complète.
+// ---------------------------------------------------------------------------
+app.post('/api/soft-alert', async (req, res) => {
+  const { userName, contactPhone, latitude, longitude } = req.body;
+
+  if (!contactPhone) {
+    return res.status(400).json({ error: 'Aucun contact fourni.' });
+  }
+
+  const mapsLink = (latitude != null && longitude != null)
+    ? `https://maps.google.com/?q=${latitude},${longitude}`
+    : 'position indisponible';
+
+  const message = `${userName || 'Une personne'} se trouve dans une situation inconfortable. Veuillez garder un œil sur sa position ou prendre contact avec elle : ${mapsLink}`;
+
+  try {
+    await client.messages.create({ to: contactPhone, from: fromNumber, body: message });
+    res.json({ status: 'envoye' });
+  } catch (err) {
+    console.error('Erreur envoi SMS (alerte discrète) :', err.message);
+    res.status(500).json({ error: 'Échec de l\'envoi du SMS.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Signalements partagés façon Waze : suspect / danger / sous influence.
+// Stockage en mémoire, partagé entre tous les utilisateurs de l'app.
+// Chaque signalement expire automatiquement 24h après sa création.
+// ---------------------------------------------------------------------------
+const REPORT_TYPES = ['suspect', 'danger', 'influence'];
+const REPORT_TTL_MS = 24 * 60 * 60 * 1000;
+const reports = {};
+
+app.post('/api/reports', (req, res) => {
+  const { type, description, latitude, longitude } = req.body;
+
+  if (!REPORT_TYPES.includes(type)) {
+    return res.status(400).json({ error: 'Type de signalement invalide.' });
+  }
+  if (latitude == null || longitude == null) {
+    return res.status(400).json({ error: 'Position manquante.' });
+  }
+
+  const id = 'r_' + Date.now() + '_' + Math.round(Math.random() * 1000);
+  const now = Date.now();
+  reports[id] = {
+    id,
+    type,
+    description: (description || '').slice(0, 200),
+    latitude,
+    longitude,
+    createdAt: now,
+    expiresAt: now + REPORT_TTL_MS,
+    votes: { there: 0, notThere: 0 },
+  };
+
+  res.json({ report: reports[id] });
+});
+
+// Liste des signalements encore actifs (moins de 24h).
+app.get('/api/reports', (req, res) => {
+  const now = Date.now();
+  const active = Object.values(reports).filter((r) => r.expiresAt > now);
+  res.json({ reports: active });
+});
+
+// Vote "toujours là" / "plus là" par les autres utilisateurs, pour garder la carte à jour.
+app.post('/api/reports/:id/vote', (req, res) => {
+  const report = reports[req.params.id];
+  const { vote } = req.body;
+  if (!report) return res.status(404).json({ error: 'Signalement introuvable.' });
+  if (vote === 'there') report.votes.there += 1;
+  else if (vote === 'not_there') report.votes.notThere += 1;
+  else return res.status(400).json({ error: 'Vote invalide.' });
+
+  // Si largement démenti, on retire le signalement plus tôt que les 24h.
+  if (report.votes.notThere >= 3 && report.votes.notThere > report.votes.there * 2) {
+    delete reports[report.id];
+    return res.json({ removed: true });
+  }
+  res.json({ report });
+});
+
+// Nettoyage périodique des signalements expirés, pour ne pas accumuler en mémoire.
+setInterval(() => {
+  const now = Date.now();
+  Object.keys(reports).forEach((id) => {
+    if (reports[id].expiresAt <= now) delete reports[id];
+  });
+}, 10 * 60 * 1000);
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Backend BeSafe démarré sur le port ${port}`));
