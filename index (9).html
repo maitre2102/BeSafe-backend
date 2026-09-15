@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>BeSafe</title>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#ec407a">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BeSafe">
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root {
+    --blue: #2f6fed;
+    --red: #e5484d;
+    --green: #1a9f6a;
+    --purple: #8b5cf6;
+    --orange: #f5a623;
+    --dark: #1c1c1e;
+    --gray: #6b7280;
+    --border: #e5e5e5;
+    --bg: #f7f7f8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: var(--dark); overscroll-behavior: none; }
+  #app { position: fixed; inset: 0; overflow: hidden; background: var(--bg); }
+  #map { position: absolute; inset: 0; z-index: 0; }
+
+  .icon-btn {
+    position: absolute; border-radius: 50%; background: #fff; border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.15); user-select: none;
+  }
+  #profileBtn { top: 16px; left: 16px; width: 40px; height: 40px; z-index: 5; font-size: 18px; }
+  #recenterBtn { bottom: 232px; right: 23px; width: 34px; height: 34px; z-index: 5; font-size: 15px; }
+
+  .action-btn {
+    position: absolute; bottom: 88px; width: 68px; height: 68px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; color: #fff; font-size: 26px;
+    border: none; cursor: pointer; z-index: 5; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  }
+  #sirenBtn { left: 24px; background: var(--blue); }
+  #sirenBtn.active { background: var(--red); animation: pulse 1s infinite; }
+  #alertBtn { right: 24px; background: var(--red); }
+
+  .mini-action-btn {
+    position: absolute; bottom: 164px; width: 52px; height: 52px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; color: #fff; font-size: 20px;
+    border: none; cursor: pointer; z-index: 5; box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  }
+  #softAlertBtn { left: 32px; background: var(--purple); }
+  #reportBtn { right: 32px; background: var(--orange); }
+
+  @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+
+  #safeBar {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 60px; background: var(--green);
+    display: flex; align-items: center; justify-content: center; color: #fff; font-size: 15px;
+    font-weight: 600; cursor: pointer; z-index: 5; gap: 8px;
+  }
+
+  .sheet {
+    position: absolute; inset: 0; background: #fff; z-index: 20; display: none;
+    flex-direction: column; padding: 20px; overflow-y: auto;
+  }
+  .sheet.show { display: flex; }
+  .sheet h2 { margin: 0 0 16px; font-size: 18px; display: flex; align-items: center; gap: 10px; }
+  .sheet .back { cursor: pointer; font-size: 20px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--gray); margin-bottom: 4px; }
+  .field input { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; }
+  .btn { padding: 12px 16px; border-radius: 10px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .btn-primary { background: var(--blue); color: #fff; }
+  .btn-outline { background: #fff; color: var(--dark); border: 1px solid var(--border); }
+  .btn-danger { background: #fff; color: var(--red); border: 1px solid var(--red); }
+  .contact-row { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+  .contact-row .name { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+  .contact-row .phone { font-size: 13px; color: var(--gray); margin-bottom: 10px; }
+  .contact-row .actions { display: flex; gap: 8px; }
+  .contact-row .actions a, .contact-row .actions button {
+    flex: 1; text-align: center; padding: 9px; border-radius: 8px; font-size: 13px; text-decoration: none;
+  }
+  .send-sms { background: var(--blue); color: #fff; }
+  .call { background: #fff; color: var(--dark); border: 1px solid var(--border); }
+
+  #alertPanel, #softAlertPanel, #reportPanel {
+    position: absolute; left: 0; right: 0; bottom: 0; background: #fff; border-radius: 16px 16px 0 0;
+    z-index: 15; padding: 18px; display: none; box-shadow: 0 -4px 16px rgba(0,0,0,0.15); max-height: 70%; overflow-y: auto;
+  }
+  #alertPanel.show, #softAlertPanel.show, #reportPanel.show { display: block; }
+  #alertPanel .head, #softAlertPanel .head, #reportPanel .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  #alertPanel .head span, #softAlertPanel .head span, #reportPanel .head span { font-weight: 600; font-size: 15px; }
+  #alertPanel .close, #softAlertPanel .close, #reportPanel .close { cursor: pointer; font-size: 18px; color: var(--gray); }
+  #alertPanel p.hint { font-size: 12px; color: var(--gray); margin: 10px 0 0; }
+
+  #confirmModal {
+    position: absolute; inset: 0; background: rgba(0,0,0,0.45); z-index: 25; display: none;
+    align-items: center; justify-content: center;
+  }
+  #confirmModal.show { display: flex; }
+  #confirmModal .box { background: #fff; border-radius: 12px; padding: 22px; width: 240px; text-align: center; }
+  #confirmModal p { font-size: 14px; margin: 0 0 16px; }
+  #confirmModal .row { display: flex; gap: 8px; }
+  #confirmModal .row button { flex: 1; }
+
+  .contact-pick { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+  .contact-pick.selected { border-color: var(--purple); background: #f3f0ff; }
+
+  .report-type-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+  .report-type { border: 1px solid var(--border); border-radius: 10px; padding: 12px 6px; text-align: center; cursor: pointer; font-size: 11px; }
+  .report-type .emoji { font-size: 22px; display: block; margin-bottom: 6px; }
+  .report-type.selected { border-color: var(--orange); background: #fff8ec; }
+  .report-desc textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: inherit; resize: vertical; min-height: 60px; }
+
+  .report-popup .type { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+  .report-popup .desc { font-size: 12px; color: var(--gray); margin-bottom: 8px; }
+  .report-popup .row { display: flex; gap: 6px; }
+  .report-popup button { flex: 1; padding: 6px; font-size: 12px; border-radius: 6px; border: 1px solid var(--border); background: #fff; cursor: pointer; }
+
+  #nearbyReportToast {
+    position: absolute; left: 12px; right: 12px; bottom: 240px; background: #fff; border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px; z-index: 12; display: none; box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+  }
+  #nearbyReportToast .row { display: flex; gap: 8px; margin-top: 10px; }
+  #nearbyReportToast .row button { flex: 1; }
+
+  #onboarding {
+    position: absolute; inset: 0; background: #fff; z-index: 30; display: none; padding: 24px; overflow-y: auto;
+  }
+  #onboarding.show { display: block; }
+  #onboarding h1 { font-size: 22px; margin: 0 0 6px; }
+  #onboarding p.sub { color: var(--gray); font-size: 13px; margin: 0 0 20px; }
+  #onboarding h3 { font-size: 14px; margin: 18px 0 8px; }
+
+  #toast {
+    position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%); background: var(--green);
+    color: #fff; padding: 10px 16px; border-radius: 20px; font-size: 13px; z-index: 40; display: none; white-space: nowrap;
+  }
+  #locStatus {
+    position: absolute; top: 16px; left: 64px; right: 16px; z-index: 5; font-size: 11px; color: var(--gray);
+    background: rgba(255,255,255,0.9); padding: 4px 8px; border-radius: 8px; display: none;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="map"></div>
+  <div id="locStatus"></div>
+
+  <div id="profileBtn" class="icon-btn">👤</div>
+  <div id="recenterBtn" class="icon-btn">🎯</div>
+
+  <button id="softAlertBtn" class="mini-action-btn" aria-label="Prévenir un contact d'un inconfort">🤝</button>
+  <button id="reportBtn" class="mini-action-btn" aria-label="Signaler une situation">⚠️</button>
+
+  <button id="sirenBtn" class="action-btn">🔊</button>
+  <button id="alertBtn" class="action-btn">🚨</button>
+
+  <div id="sirenLabel" style="display:none; position:absolute; bottom:230px; left:16px; right:16px; font-size:13px; font-weight:600; color:#fff; background:var(--red); padding:10px 14px; border-radius:12px; text-align:center; box-shadow:0 2px 8px rgba(0,0,0,0.25); z-index:8;">🔊 Sirène active — monte le volume de ton téléphone au maximum</div>
+
+  <div id="safeBar">🛡️ Je suis en sécurité</div>
+
+  <div id="nearbyReportToast">
+    <div style="font-size:13px; font-weight:600; margin-bottom:4px;" id="nearbyReportTitle">Signalement à proximité</div>
+    <div style="font-size:12px; color:var(--gray);" id="nearbyReportDesc"></div>
+    <div class="row">
+      <button class="btn btn-outline" id="nearbyThere">Toujours là</button>
+      <button class="btn btn-outline" id="nearbyNotThere">Plus là</button>
+    </div>
+  </div>
+
+  <div id="alertPanel">
+    <div class="head"><span>Alerte en cours</span><span class="close" id="closeAlertPanel">✕</span></div>
+    <div id="contactsList"></div>
+    <p class="hint" id="alertHint">L'envoi automatique est tenté en premier. S'il échoue, un lien manuel apparaît pour envoyer toi-même.</p>
+  </div>
+
+  <div id="softAlertPanel">
+    <div class="head"><span>Prévenir discrètement</span><span class="close" id="closeSoftAlertPanel">✕</span></div>
+    <p style="font-size:12px; color:var(--gray); margin:0 0 10px;">Choisis un contact — il recevra un message lui demandant de garder un œil sur ta position, sans déclencher d'alerte complète.</p>
+    <div id="softContactsList"></div>
+    <div id="softAlertStatus" style="display:none; margin-top:10px;"></div>
+    <button class="btn btn-primary" id="sendSoftAlert" style="width:100%; margin-top:6px;">Envoyer</button>
+  </div>
+
+  <div id="reportPanel">
+    <div class="head"><span>Signaler une situation</span><span class="close" id="closeReportPanel">✕</span></div>
+    <div class="report-type-grid">
+      <div class="report-type" data-type="suspect"><span class="emoji">👤</span>Personne suspecte</div>
+      <div class="report-type" data-type="danger"><span class="emoji">💥</span>Situation dangereuse</div>
+      <div class="report-type" data-type="influence"><span class="emoji">🍾</span>Sous influence</div>
+    </div>
+    <div class="report-desc">
+      <label style="display:block; font-size:12px; color:var(--gray); margin-bottom:4px;">Petite description (visible par les autres utilisateurs)</label>
+      <textarea id="reportDescription" placeholder="Ex : homme suspect qui suit les passants près de la sortie sud"></textarea>
+    </div>
+    <button class="btn btn-primary" id="submitReport" style="width:100%; margin-top:10px;">Signaler</button>
+    <p style="font-size:11px; color:var(--gray); margin:10px 0 0;">Le signalement apparaît sur la carte de tous les utilisateurs à proximité et disparaît automatiquement au bout de 24h.</p>
+  </div>
+
+  <div id="confirmModal">
+    <div class="box">
+      <p>Es-tu sûre d'être en sécurité ?</p>
+      <div class="row">
+        <button class="btn btn-primary" id="confirmYes">Oui</button>
+        <button class="btn btn-outline" id="confirmNo">Non</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Compte -->
+  <div class="sheet" id="sheetCompte">
+    <h2><span class="back" data-close>←</span> Mon compte</h2>
+    <div class="field"><label>Prénom</label><input id="inNom" type="text"></div>
+    <div class="field"><label>Téléphone</label><input id="inTel" type="tel"></div>
+    <button class="btn btn-primary" id="saveCompte">Enregistrer</button>
+  </div>
+
+  <!-- Paramètres -->
+  <div class="sheet" id="sheetParams">
+    <h2><span class="back" data-close>←</span> Paramètres</h2>
+    <h3>Contacts de confiance</h3>
+    <div id="contactsEdit"></div>
+    <button class="btn btn-outline" id="addContact" style="margin-bottom:20px;">+ Ajouter un contact</button>
+    <div id="devSection" style="display:none;">
+      <h3>Automatisation (développeur)</h3>
+      <div class="field">
+        <label>URL du backend</label>
+        <input id="inBackendUrl" type="url" placeholder="https://besafe-backend.onrender.com">
+      </div>
+      <p style="font-size:12px; color:var(--gray); margin:-8px 0 20px;">Laisse vide pour utiliser le backend par défaut de l'app.</p>
+    </div>
+    <h3>Aide</h3>
+    <button class="btn btn-outline" id="openAssistant" style="width:100%; margin-bottom:20px;">💬 Discuter avec l'assistant</button>
+    <h3>Données</h3>
+    <button class="btn btn-danger" id="resetData">Réinitialiser mes données</button>
+  </div>
+
+  <!-- Assistant IA -->
+  <div class="sheet" id="sheetAssistant" style="padding:0;">
+    <div style="display:flex; align-items:center; gap:10px; padding:20px 20px 12px;">
+      <span class="back" data-close style="cursor:pointer; font-size:20px;">←</span>
+      <span style="font-size:16px; font-weight:500;">Assistant BeSafe</span>
+    </div>
+    <div id="chatMessages" style="flex:1; overflow-y:auto; padding:0 20px; display:flex; flex-direction:column; gap:10px;"></div>
+    <div style="display:flex; gap:8px; padding:14px 20px 20px; border-top:1px solid var(--border);">
+      <input id="chatInput" type="text" placeholder="Pose ta question…" style="flex:1; padding:10px; border:1px solid var(--border); border-radius:20px; font-size:14px;">
+      <button id="chatSend" class="btn btn-primary" style="border-radius:20px; padding:10px 18px;">Envoyer</button>
+    </div>
+  </div>
+
+  <!-- A propos -->
+  <div class="sheet" id="sheetApropos">
+    <h2><span class="back" data-close>←</span> À propos</h2>
+    <p style="font-size:13px; line-height:1.6; color:var(--gray);">
+      BeSafe — version 0.1 (prototype personnel).<br><br>
+      Application pensée pour aider à alerter rapidement des personnes de confiance en cas de sentiment d'insécurité dans la rue.<br><br>
+      Cette version fonctionne sans serveur : elle s'appuie sur ton GPS, ton app SMS et ton app téléphone. Elle ne remplace pas un appel direct au 112 en cas de danger immédiat.
+    </p>
+  </div>
+
+  <div id="profileMenu" class="sheet" style="background:transparent; z-index:19; padding:0; display:none; align-items:flex-start;">
+    <div style="margin:60px 0 0 16px; background:#fff; border:1px solid var(--border); border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,0.15); width:200px; overflow:hidden;">
+      <div class="menu-item" data-target="sheetCompte" style="padding:14px; font-size:14px; border-bottom:1px solid var(--border); cursor:pointer;">👤 Mon compte</div>
+      <div class="menu-item" data-target="sheetParams" style="padding:14px; font-size:14px; border-bottom:1px solid var(--border); cursor:pointer;">⚙️ Paramètres</div>
+      <div class="menu-item" data-target="sheetApropos" style="padding:14px; font-size:14px; cursor:pointer;">ℹ️ À propos</div>
+    </div>
+  </div>
+
+  <div id="onboarding">
+    <h1>Bienvenue sur BeSafe</h1>
+    <p class="sub">Renseigne tes informations et au moins un contact de confiance pour commencer.</p>
+    <div class="field"><label>Ton prénom</label><input id="obNom" type="text"></div>
+    <div class="field"><label>Ton téléphone</label><input id="obTel" type="tel"></div>
+    <h3>Personnes de confiance</h3>
+    <div id="obContacts"></div>
+    <button class="btn btn-outline" id="obAddContact" style="margin-bottom:20px;">+ Ajouter un contact</button>
+    <button class="btn btn-primary" id="obFinish" style="width:100%;">Commencer</button>
+  </div>
+
+  <div id="toast"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function(){
+  var STORAGE_KEY = 'besafe_profile_v1';
+  var DEFAULT_BACKEND_URL = 'https://besafe-backend-99a4.onrender.com';
+  var DEV_KEY = 'besafe_dev_v1';
+
+  // Ouvrir l'app une fois avec ?dev=1 dans l'URL active ce mode sur cet appareil,
+  // pour continuer à voir/modifier l'URL du backend dans Paramètres.
+  if (new URLSearchParams(window.location.search).get('dev') === '1') {
+    localStorage.setItem(DEV_KEY, '1');
+  }
+  var isDevDevice = localStorage.getItem(DEV_KEY) === '1';
+
+  function getBackendUrl(){
+    return ((profile && profile.backendUrl) || DEFAULT_BACKEND_URL).replace(/\/$/, '');
+  }
+
+  // Identifiant d'appareil anonyme et persistant, utilisé uniquement pour le compteur
+  // d'utilisateurs et la vue admin — jamais affiché aux autres utilisateurs de l'app.
+  var DEVICE_ID_KEY = 'besafe_device_id';
+  var deviceId = localStorage.getItem(DEVICE_ID_KEY);
+  if (!deviceId) {
+    deviceId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('dev_' + Date.now() + '_' + Math.random().toString(36).slice(2));
+    localStorage.setItem(DEVICE_ID_KEY, deviceId);
+  }
+
+  function registerDevice(){
+    if (!profile) return;
+    fetch(getBackendUrl() + '/api/devices/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        deviceId: deviceId,
+        name: profile.name,
+        phone: profile.phone,
+        contactsCount: (profile.contacts || []).length
+      })
+    }).catch(function(){ /* pas grave si ça échoue, ce n'est pas une fonction critique */ });
+  }
+
+  function pingDevice(){
+    if (!profile) return;
+    fetch(getBackendUrl() + '/api/devices/' + deviceId + '/ping', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        latitude: currentLatLng ? currentLatLng[0] : null,
+        longitude: currentLatLng ? currentLatLng[1] : null
+      })
+    }).catch(function(){});
+  }
+
+  function loadProfile(){
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch(e){ return null; }
+  }
+  function saveProfile(p){ localStorage.setItem(STORAGE_KEY, JSON.stringify(p)); }
+
+  var profile = loadProfile();
+
+  // ---------- Contact row builders (reused for onboarding + settings) ----------
+  function contactRowEditable(container, contact, idx, onRemove){
+    var wrap = document.createElement('div');
+    wrap.className = 'contact-row';
+    wrap.innerHTML =
+      '<div class="field"><label>Nom</label><input type="text" class="c-name" value="' + (contact.name||'') + '"></div>' +
+      '<div class="field"><label>Téléphone</label><input type="tel" class="c-phone" value="' + (contact.phone||'') + '"></div>' +
+      '<button class="btn btn-outline" style="width:100%;">Retirer ce contact</button>';
+    wrap.querySelector('button').addEventListener('click', function(){
+      wrap.remove();
+    });
+    container.appendChild(wrap);
+    return wrap;
+  }
+
+  function readContactsFrom(container){
+    var rows = container.querySelectorAll('.contact-row');
+    var list = [];
+    rows.forEach(function(r){
+      var name = r.querySelector('.c-name').value.trim();
+      var phone = r.querySelector('.c-phone').value.trim();
+      if (name && phone) list.push({ name: name, phone: phone });
+    });
+    return list;
+  }
+
+  // ---------- Onboarding ----------
+  var onboarding = document.getElementById('onboarding');
+  var obContacts = document.getElementById('obContacts');
+  document.getElementById('obAddContact').addEventListener('click', function(){
+    contactRowEditable(obContacts, {}, null);
+  });
+  document.getElementById('obFinish').addEventListener('click', function(){
+    var name = document.getElementById('obNom').value.trim() || 'Utilisatrice';
+    var tel = document.getElementById('obTel').value.trim();
+    var contacts = readContactsFrom(obContacts);
+    profile = { name: name, phone: tel, contacts: contacts, lastSafeAt: null };
+    saveProfile(profile);
+    registerDevice();
+    onboarding.classList.remove('show');
+    initAfterProfile();
+  });
+
+  if (!profile) {
+    contactRowEditable(obContacts, {}, null);
+    onboarding.classList.add('show');
+  } else {
+    initAfterProfile();
+  }
+
+  // ---------- Main app init ----------
+  var map, marker, currentLatLng = null;
+  var reportsLayer, shopsLayer;
+  var seenReportIds = new Set();
+  var activeNearbyReportId = null;
+  var shopsLoadedNear = null;
+
+  var REPORT_META = {
+    suspect: { emoji: '👤', label: 'Personne suspecte' },
+    danger: { emoji: '💥', label: 'Situation dangereuse' },
+    influence: { emoji: '🍾', label: 'Sous influence' }
+  };
+
+  function distanceMeters(a, b){
+    var R = 6371000;
+    var dLat = (b[0]-a[0]) * Math.PI/180;
+    var dLng = (b[1]-a[1]) * Math.PI/180;
+    var lat1 = a[0] * Math.PI/180, lat2 = b[0] * Math.PI/180;
+    var h = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLng/2)*Math.sin(dLng/2);
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+
+  function loadReports(){
+    if (!reportsLayer) return;
+    fetch(getBackendUrl() + '/api/reports')
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        reportsLayer.clearLayers();
+        (data.reports || []).forEach(function(r){
+          var meta = REPORT_META[r.type] || { emoji: '⚠️', label: 'Signalement' };
+          var icon = L.divIcon({
+            className: '',
+            html: '<div style="width:14px;height:14px;border-radius:50%;background:#e5484d;border:2px solid #fff;box-shadow:0 0 0 3px rgba(229,72,77,0.3);"></div>',
+            iconSize: [18,18], iconAnchor: [9,9]
+          });
+          var m = L.marker([r.latitude, r.longitude], { icon: icon }).addTo(reportsLayer);
+          var popupHtml =
+            '<div class="report-popup">' +
+              '<div class="type">' + meta.emoji + ' ' + meta.label + '</div>' +
+              (r.description ? '<div class="desc">' + r.description + '</div>' : '') +
+              '<div class="row">' +
+                '<button data-vote="there">Toujours là</button>' +
+                '<button data-vote="not_there">Plus là</button>' +
+              '</div>' +
+            '</div>';
+          m.bindPopup(popupHtml);
+          m.on('popupopen', function(e){
+            e.popup.getElement().querySelectorAll('[data-vote]').forEach(function(btn){
+              btn.addEventListener('click', function(){
+                voteReport(r.id, btn.getAttribute('data-vote'));
+                m.closePopup();
+              });
+            });
+          });
+
+          // Notification de proximité pour les signalements pas encore vus
+          if (currentLatLng && !seenReportIds.has(r.id)) {
+            seenReportIds.add(r.id);
+            if (distanceMeters(currentLatLng, [r.latitude, r.longitude]) <= 500) {
+              showNearbyReportToast(r, meta);
+            }
+          }
+        });
+      })
+      .catch(function(){ /* silencieux : la carte reste utilisable sans signalements */ });
+  }
+
+  function voteReport(id, vote){
+    fetch(getBackendUrl() + '/api/reports/' + id + '/vote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vote: vote })
+    }).then(function(){ loadReports(); }).catch(function(){});
+  }
+
+  function showNearbyReportToast(report, meta){
+    activeNearbyReportId = report.id;
+    document.getElementById('nearbyReportTitle').textContent = meta.emoji + ' ' + meta.label + ' à proximité';
+    document.getElementById('nearbyReportDesc').textContent = report.description || 'Un autre utilisateur a signalé cette situation près de toi.';
+    document.getElementById('nearbyReportToast').style.display = 'block';
+  }
+
+  // ---------- Commerces-refuges (ouverts en vert, fermés en rouge) ----------
+  function isShopOpenNow(openingHours){
+    // Évaluateur volontairement simplifié : couvre les formats OSM courants
+    // ("Mo-Fr 09:00-18:00; Sa 09:00-12:00", "24/7", "off"). Retourne null si le format
+    // n'est pas reconnu, plutôt que de risquer une réponse fausse.
+    if (!openingHours) return null;
+    var oh = openingHours.trim();
+    if (/^24\/7$/i.test(oh)) return true;
+    if (/^(off|closed)$/i.test(oh)) return false;
+
+    var days = ['su','mo','tu','we','th','fr','sa'];
+    var now = new Date();
+    var todayIdx = now.getDay();
+    var nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+    var rules = oh.split(';');
+    for (var i = 0; i < rules.length; i++) {
+      var rule = rules[i].trim();
+      if (!rule) continue;
+      var m = rule.match(/^([a-z,\-]+)\s+([\d:,\-]+)$/i);
+      if (!m) continue;
+      var dayPart = m[1].toLowerCase();
+      var timePart = m[2];
+
+      var dayIndexes = [];
+      dayPart.split(',').forEach(function(seg){
+        var range = seg.split('-');
+        var startIdx = days.indexOf(range[0]);
+        var endIdx = range[1] ? days.indexOf(range[1]) : startIdx;
+        if (startIdx === -1 || endIdx === -1) return;
+        if (startIdx <= endIdx) {
+          for (var d = startIdx; d <= endIdx; d++) dayIndexes.push(d);
+        } else {
+          for (var d = startIdx; d < 7; d++) dayIndexes.push(d);
+          for (var d = 0; d <= endIdx; d++) dayIndexes.push(d);
+        }
+      });
+      if (dayIndexes.indexOf(todayIdx) === -1) continue;
+
+      var covered = timePart.split(',').some(function(tr){
+        var parts = tr.split('-');
+        if (parts.length !== 2) return false;
+        var toMin = function(t){ var hm = t.split(':'); return parseInt(hm[0],10)*60 + parseInt(hm[1]||'0',10); };
+        var start = toMin(parts[0]), end = toMin(parts[1]);
+        if (end < start) return nowMinutes >= start || nowMinutes <= end; // plage passant minuit
+        return nowMinutes >= start && nowMinutes <= end;
+      });
+      if (covered) return true;
+    }
+    return false;
+  }
+
+  function loadShops(center){
+    if (!shopsLayer) return;
+    // Évite de re-interroger Overpass à chaque petit déplacement.
+    if (shopsLoadedNear && distanceMeters(shopsLoadedNear, center) < 150) return;
+    shopsLoadedNear = center;
+
+    var radius = 400;
+    var query = '[out:json][timeout:15];(' +
+      'node["shop"](around:' + radius + ',' + center[0] + ',' + center[1] + ');' +
+      'node["amenity"~"pharmacy|cafe|restaurant|fast_food|fuel|convenience"](around:' + radius + ',' + center[0] + ',' + center[1] + ');' +
+      ');out body;';
+
+    fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: 'data=' + encodeURIComponent(query)
+    }).then(function(r){ return r.json(); }).then(function(data){
+      shopsLayer.clearLayers();
+      (data.elements || []).forEach(function(el){
+        if (!el.tags || !el.tags.name) return;
+        var open = isShopOpenNow(el.tags.opening_hours);
+        var color = open === true ? '#1a9f6a' : (open === false ? '#e5484d' : '#9ca3af');
+        var icon = L.divIcon({
+          className: '',
+          html: '<div style="font-size:16px; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3));">' +
+                '<svg width="20" height="20" viewBox="0 0 24 24"><path fill="' + color + '" d="M12 3 2 11h2v9h6v-6h4v6h6v-9h2L12 3z"/></svg></div>',
+          iconSize: [20,20], iconAnchor: [10,18]
+        });
+        L.marker([el.lat, el.lon], { icon: icon })
+          .bindPopup('<strong>' + el.tags.name + '</strong><br>' + (open === true ? 'Ouvert' : open === false ? 'Fermé' : 'Horaires inconnus'))
+          .addTo(shopsLayer);
+      });
+    }).catch(function(){ /* silencieux : Overpass peut être temporairement indisponible */ });
+  }
+
+  function initAfterProfile(){
+    registerDevice();
+    initMap();
+    initSheets();
+    initButtons();
+  }
+
+  function initMap(){
+    map = L.map('map', { zoomControl: false, attributionControl: true }).setView([50.8503, 4.3517], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    shopsLayer = L.layerGroup().addTo(map);
+    reportsLayer = L.layerGroup().addTo(map);
+
+    var icon = L.divIcon({
+      className: '',
+      html: '<div style="width:16px;height:16px;border-radius:50%;background:#2f6fed;border:3px solid #fff;box-shadow:0 0 0 4px rgba(47,111,237,0.25);"></div>',
+      iconSize: [22,22], iconAnchor: [11,11]
+    });
+    marker = L.marker([50.8503, 4.3517], { icon: icon }).addTo(map);
+
+    var status = document.getElementById('locStatus');
+    if (!navigator.geolocation) {
+      status.style.display = 'block';
+      status.textContent = 'La géolocalisation n\'est pas disponible dans ce navigateur.';
+      return;
+    }
+    navigator.geolocation.watchPosition(function(pos){
+      currentLatLng = [pos.coords.latitude, pos.coords.longitude];
+      marker.setLatLng(currentLatLng);
+      if (!map._hasCentered) { map.setView(currentLatLng, 16); map._hasCentered = true; }
+      status.style.display = 'none';
+      loadShops(currentLatLng);
+    }, function(err){
+      status.style.display = 'block';
+      status.textContent = 'Position indisponible (' + err.message + '). Vérifie que la localisation est autorisée et que la page est servie en HTTPS.';
+    }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
+
+    // Rafraîchit les signalements partagés régulièrement, si un backend est configuré.
+    setInterval(loadReports, 20000);
+    setTimeout(loadReports, 2000);
+
+    // Signale cet appareil comme actif, avec sa position si disponible.
+    setInterval(pingDevice, 60000);
+    setTimeout(pingDevice, 3000);
+
+    document.getElementById('nearbyThere').addEventListener('click', function(){
+      if (activeNearbyReportId) voteReport(activeNearbyReportId, 'there');
+      document.getElementById('nearbyReportToast').style.display = 'none';
+    });
+    document.getElementById('nearbyNotThere').addEventListener('click', function(){
+      if (activeNearbyReportId) voteReport(activeNearbyReportId, 'not_there');
+      document.getElementById('nearbyReportToast').style.display = 'none';
+    });
+  }
+
+  function initButtons(){
+    document.getElementById('recenterBtn').addEventListener('click', function(){
+      if (currentLatLng) map.setView(currentLatLng, 17);
+    });
+
+    // ---------- Alerte discrète (bouton violet) ----------
+    var softAlertPanel = document.getElementById('softAlertPanel');
+    var softContactsList = document.getElementById('softContactsList');
+    var selectedContact = null;
+
+    document.getElementById('softAlertBtn').addEventListener('click', function(){
+      selectedContact = null;
+      softContactsList.innerHTML = '';
+      document.getElementById('softAlertStatus').style.display = 'none';
+      document.getElementById('sendSoftAlert').style.display = 'block';
+      (profile.contacts || []).forEach(function(c){
+        var row = document.createElement('div');
+        row.className = 'contact-pick';
+        row.innerHTML = '<span>' + c.name + '</span><span style="font-size:12px; color:var(--gray);">' + c.phone + '</span>';
+        row.addEventListener('click', function(){
+          softContactsList.querySelectorAll('.contact-pick').forEach(function(r){ r.classList.remove('selected'); });
+          row.classList.add('selected');
+          selectedContact = c;
+        });
+        softContactsList.appendChild(row);
+      });
+      if (!profile.contacts || !profile.contacts.length) {
+        softContactsList.innerHTML = '<p style="font-size:13px;color:var(--gray);">Ajoute un contact de confiance dans Paramètres pour utiliser cette fonction.</p>';
+      }
+      softAlertPanel.classList.add('show');
+    });
+    document.getElementById('closeSoftAlertPanel').addEventListener('click', function(){
+      softAlertPanel.classList.remove('show');
+    });
+    document.getElementById('sendSoftAlert').addEventListener('click', function(){
+      if (!selectedContact) return;
+      var mapsLink = currentLatLng ? 'https://maps.google.com/?q=' + currentLatLng[0] + ',' + currentLatLng[1] : 'https://maps.google.com/';
+      var msg = encodeURIComponent((profile.name || 'Un proche') + ' se trouve dans une situation inconfortable. Veuillez garder un œil sur sa position ou prendre contact avec elle : ' + mapsLink);
+      var status = document.getElementById('softAlertStatus');
+      var sendBtn = document.getElementById('sendSoftAlert');
+
+      // Même logique que le bouton rouge : un vrai lien à toucher, affiché immédiatement,
+      // sans dépendre d'un appel réseau. C'est ce qui fonctionne de façon fiable sur iOS.
+      status.style.display = 'block';
+      status.innerHTML =
+        '<div class="contact-row" style="margin:0;"><div class="actions">' +
+          '<a class="send-sms" href="sms:' + selectedContact.phone + '?body=' + msg + '">Envoyer SMS</a>' +
+          '<a class="call" href="tel:' + selectedContact.phone + '">Appeler</a>' +
+        '</div></div>';
+      sendBtn.style.display = 'none';
+      startIncident('alerte_discrete', 15 * 60 * 1000);
+
+      // Tentative d'automatisation en arrière-plan, silencieuse : si un jour Twilio est prêt,
+      // ça part aussi tout seul, sans rien changer à l'affichage ni bloquer le lien manuel ci-dessus.
+      fetch(getBackendUrl() + '/api/soft-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userName: profile.name,
+          contactPhone: selectedContact.phone,
+          latitude: currentLatLng ? currentLatLng[0] : null,
+          longitude: currentLatLng ? currentLatLng[1] : null
+        })
+      }).catch(function(){ /* le lien manuel déjà affiché suffit */ });
+    });
+
+    // ---------- Signalement partagé (bouton orange) ----------
+    var reportPanel = document.getElementById('reportPanel');
+    var selectedReportType = null;
+
+    document.getElementById('reportBtn').addEventListener('click', function(){
+      selectedReportType = null;
+      document.querySelectorAll('.report-type').forEach(function(el){ el.classList.remove('selected'); });
+      document.getElementById('reportDescription').value = '';
+      reportPanel.classList.add('show');
+    });
+    document.getElementById('closeReportPanel').addEventListener('click', function(){
+      reportPanel.classList.remove('show');
+    });
+    document.querySelectorAll('.report-type').forEach(function(el){
+      el.addEventListener('click', function(){
+        document.querySelectorAll('.report-type').forEach(function(o){ o.classList.remove('selected'); });
+        el.classList.add('selected');
+        selectedReportType = el.getAttribute('data-type');
+      });
+    });
+    document.getElementById('submitReport').addEventListener('click', function(){
+      if (!selectedReportType) { showToast('Choisis un type de signalement.'); return; }
+      if (!currentLatLng) { showToast('Position indisponible pour le moment.'); return; }
+
+      fetch(getBackendUrl() + '/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: selectedReportType,
+          description: document.getElementById('reportDescription').value.trim(),
+          latitude: currentLatLng[0],
+          longitude: currentLatLng[1]
+        })
+      }).then(function(r){ return r.json(); }).then(function(data){
+        reportPanel.classList.remove('show');
+        showToast('Signalement envoyé ✅');
+        if (data.report) seenReportIds.add(data.report.id);
+        loadReports();
+      }).catch(function(){
+        showToast('Échec de l\'envoi du signalement.');
+      });
+    });
+
+    function showToast(text){
+      var toast = document.getElementById('toast');
+      toast.textContent = text;
+      toast.style.display = 'block';
+      setTimeout(function(){ toast.style.display = 'none'; }, 2400);
+    }
+    window._showToast = showToast;
+
+    // ---------- Trajet lié à un incident (alerte, alerte discrète, sirène) ----------
+    // On ne trace jamais les déplacements ordinaires : uniquement pendant un incident actif,
+    // du déclenchement jusqu'à la confirmation "je suis en sécurité".
+    var activeIncidents = {}; // type -> { id, interval }
+
+    function startIncident(type, autoCloseMs){
+      fetch(getBackendUrl() + '/api/incidents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: type,
+          deviceId: deviceId,
+          userName: profile.name,
+          latitude: currentLatLng ? currentLatLng[0] : null,
+          longitude: currentLatLng ? currentLatLng[1] : null
+        })
+      }).then(function(r){ return r.json(); }).then(function(data){
+        if (!data.incidentId) return;
+        var interval = setInterval(function(){
+          if (!currentLatLng) return;
+          fetch(getBackendUrl() + '/api/incidents/' + data.incidentId + '/position', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ latitude: currentLatLng[0], longitude: currentLatLng[1] })
+          }).catch(function(){});
+        }, 15000);
+        activeIncidents[type] = { id: data.incidentId, interval: interval };
+        if (autoCloseMs) setTimeout(function(){ closeIncident(type); }, autoCloseMs);
+      }).catch(function(){});
+    }
+
+    function closeIncident(type){
+      var inc = activeIncidents[type];
+      if (!inc) return;
+      clearInterval(inc.interval);
+      fetch(getBackendUrl() + '/api/incidents/' + inc.id + '/close', { method: 'POST' }).catch(function(){});
+      delete activeIncidents[type];
+    }
+
+    function closeAllIncidents(){
+      Object.keys(activeIncidents).forEach(closeIncident);
+    }
+
+    // Siren
+    var sirenBtn = document.getElementById('sirenBtn');
+    var sirenLabel = document.getElementById('sirenLabel');
+    var audioCtx = null, oscillator = null, sirenOn = false, vibrateInterval = null;
+    sirenBtn.addEventListener('click', function(){
+      sirenOn = !sirenOn;
+      sirenBtn.classList.toggle('active', sirenOn);
+      sirenLabel.style.display = sirenOn ? 'block' : 'none';
+      if (sirenOn) {
+        startIncident('sirene');
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        oscillator = audioCtx.createOscillator();
+        var gain = audioCtx.createGain();
+        oscillator.type = 'square';
+        oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
+        gain.gain.setValueAtTime(1, audioCtx.currentTime);
+        oscillator.connect(gain).connect(audioCtx.destination);
+        oscillator.start();
+        var rising = true;
+        oscillator._sweep = setInterval(function(){
+          var f = rising ? 1200 : 700;
+          oscillator.frequency.linearRampToValueAtTime(f, audioCtx.currentTime + 0.4);
+          rising = !rising;
+        }, 400);
+        if (navigator.vibrate) {
+          vibrateInterval = setInterval(function(){ navigator.vibrate([300,100,300]); }, 800);
+        }
+      } else {
+        closeIncident('sirene');
+        if (oscillator) { clearInterval(oscillator._sweep); oscillator.stop(); oscillator.disconnect(); oscillator = null; }
+        if (audioCtx) { audioCtx.close(); audioCtx = null; }
+        if (vibrateInterval) { clearInterval(vibrateInterval); vibrateInterval = null; }
+        if (navigator.vibrate) navigator.vibrate(0);
+      }
+    });
+    window._stopSiren = function(){ if (sirenOn) sirenBtn.click(); };
+
+    // Alert
+    var alertPanel = document.getElementById('alertPanel');
+    document.getElementById('alertBtn').addEventListener('click', function(){
+      triggerAutomaticAlert();
+    });
+    document.getElementById('closeAlertPanel').addEventListener('click', function(){
+      alertPanel.classList.remove('show');
+    });
+
+    function triggerAutomaticAlert(){
+      var list = document.getElementById('contactsList');
+      list.innerHTML = '<p style="font-size:13px;">Envoi de l\'alerte en cours…</p>';
+      alertPanel.classList.add('show');
+      startIncident('alerte_urgence');
+
+      fetch(getBackendUrl() + '/api/alerts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userName: profile.name,
+          latitude: currentLatLng ? currentLatLng[0] : null,
+          longitude: currentLatLng ? currentLatLng[1] : null,
+          contacts: profile.contacts || []
+        })
+      }).then(function(r){ return r.json(); }).then(function(data){
+        list.innerHTML =
+          '<p style="font-size:14px; font-weight:600; color:var(--green);">Alerte envoyée automatiquement ✅</p>' +
+          '<p style="font-size:13px; color:var(--gray);">Un SMS a été envoyé à tous tes contacts, et ils vont être appelés un par un jusqu\'à ce que l\'un d\'eux décroche et entende le message d\'urgence.</p>';
+      }).catch(function(err){
+        list.innerHTML =
+          '<p style="font-size:14px; font-weight:600; color:var(--red);">Échec de l\'envoi automatique.</p>' +
+          '<p style="font-size:13px; color:var(--gray);">Utilise l\'envoi manuel ci-dessous en attendant.</p>';
+        renderManualAlertPanel(true);
+      });
+    }
+
+    function renderManualAlertPanel(append){
+      var list = document.getElementById('contactsList');
+      var mapsLink = currentLatLng
+        ? 'https://maps.google.com/?q=' + currentLatLng[0] + ',' + currentLatLng[1]
+        : 'https://maps.google.com/';
+      var msg = encodeURIComponent((profile.name || 'Un proche') + ' a besoin d\'aide de toute urgence. Voici sa position en direct : ' + mapsLink);
+      if (!append) list.innerHTML = '';
+      (profile.contacts || []).forEach(function(c){
+        var row = document.createElement('div');
+        row.className = 'contact-row';
+        row.innerHTML =
+          '<div class="name">' + c.name + '</div>' +
+          '<div class="phone">' + c.phone + '</div>' +
+          '<div class="actions">' +
+            '<a class="send-sms" href="sms:' + c.phone + '?body=' + msg + '">Envoyer SMS</a>' +
+            '<a class="call" href="tel:' + c.phone + '">Appeler</a>' +
+          '</div>';
+        list.appendChild(row);
+      });
+      if (!profile.contacts || !profile.contacts.length) {
+        list.innerHTML += '<p style="font-size:13px;color:var(--gray);">Aucun contact de confiance enregistré. Ajoute-en un dans Paramètres.</p>';
+      }
+    }
+
+    // Safe bar
+    var confirmModal = document.getElementById('confirmModal');
+    document.getElementById('safeBar').addEventListener('click', function(){
+      confirmModal.classList.add('show');
+    });
+    document.getElementById('confirmNo').addEventListener('click', function(){
+      confirmModal.classList.remove('show');
+    });
+    document.getElementById('confirmYes').addEventListener('click', function(){
+      confirmModal.classList.remove('show');
+      alertPanel.classList.remove('show');
+      window._stopSiren();
+      closeAllIncidents();
+      profile.lastSafeAt = new Date().toISOString();
+      saveProfile(profile);
+      var toast = document.getElementById('toast');
+      toast.textContent = 'Tu es marquée en sécurité ✅';
+      toast.style.display = 'block';
+      setTimeout(function(){ toast.style.display = 'none'; }, 2200);
+    });
+  }
+
+  function initSheets(){
+    var profileBtn = document.getElementById('profileBtn');
+    var profileMenu = document.getElementById('profileMenu');
+    profileBtn.addEventListener('click', function(){
+      profileMenu.style.display = profileMenu.style.display === 'none' ? 'flex' : 'none';
+    });
+    profileMenu.addEventListener('click', function(e){
+      if (e.target === profileMenu) profileMenu.style.display = 'none';
+    });
+    document.querySelectorAll('.menu-item').forEach(function(item){
+      item.addEventListener('click', function(){
+        profileMenu.style.display = 'none';
+        var target = document.getElementById(item.getAttribute('data-target'));
+        if (target.id === 'sheetCompte') {
+          document.getElementById('inNom').value = profile.name || '';
+          document.getElementById('inTel').value = profile.phone || '';
+        }
+        if (target.id === 'sheetParams') {
+          var cEdit = document.getElementById('contactsEdit');
+          cEdit.innerHTML = '';
+          (profile.contacts || []).forEach(function(c){ contactRowEditable(cEdit, c); });
+          document.getElementById('devSection').style.display = isDevDevice ? 'block' : 'none';
+          if (isDevDevice) document.getElementById('inBackendUrl').value = profile.backendUrl || '';
+        }
+        target.classList.add('show');
+      });
+    });
+    document.querySelectorAll('[data-close]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        btn.closest('.sheet').classList.remove('show');
+      });
+    });
+    document.getElementById('saveCompte').addEventListener('click', function(){
+      profile.name = document.getElementById('inNom').value.trim();
+      profile.phone = document.getElementById('inTel').value.trim();
+      saveProfile(profile);
+      registerDevice();
+      document.getElementById('sheetCompte').classList.remove('show');
+    });
+    document.getElementById('addContact').addEventListener('click', function(){
+      contactRowEditable(document.getElementById('contactsEdit'), {});
+    });
+    document.getElementById('sheetParams').addEventListener('click', function(e){
+      if (e.target.id === 'resetData') {
+        if (confirm('Effacer toutes tes données locales ?')) {
+          localStorage.removeItem(STORAGE_KEY);
+          location.reload();
+        }
+        return;
+      }
+    });
+    // Save contacts whenever leaving the settings sheet
+    var backOnParams = document.querySelector('#sheetParams [data-close]');
+    backOnParams.addEventListener('click', function(){
+      profile.contacts = readContactsFrom(document.getElementById('contactsEdit'));
+      if (isDevDevice) profile.backendUrl = document.getElementById('inBackendUrl').value.trim();
+      saveProfile(profile);
+      registerDevice();
+    });
+
+    // ---------- Assistant IA (aide à l'utilisation) ----------
+    var chatHistory = [];
+    var chatMessages = document.getElementById('chatMessages');
+
+    function renderChatBubble(role, text){
+      var bubble = document.createElement('div');
+      var isUser = role === 'user';
+      bubble.style.cssText = 'max-width:80%; padding:10px 14px; border-radius:14px; font-size:13px; line-height:1.4; align-self:' +
+        (isUser ? 'flex-end' : 'flex-start') + '; background:' + (isUser ? 'var(--blue)' : 'var(--bg)') +
+        '; color:' + (isUser ? '#fff' : 'var(--dark)') + '; border:' + (isUser ? 'none' : '1px solid var(--border)') + ';';
+      bubble.textContent = text;
+      chatMessages.appendChild(bubble);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    document.getElementById('openAssistant').addEventListener('click', function(){
+      if (!chatHistory.length) {
+        renderChatBubble('assistant', 'Salut ! Je suis l\'assistant BeSafe. Pose-moi une question sur l\'utilisation de l\'app (boutons, contacts, signalement…).');
+      }
+      document.getElementById('sheetAssistant').classList.add('show');
+    });
+
+    function sendChatMessage(){
+      var input = document.getElementById('chatInput');
+      var text = input.value.trim();
+      if (!text) return;
+      renderChatBubble('user', text);
+      chatHistory.push({ role: 'user', content: text });
+      input.value = '';
+
+      var typing = document.createElement('div');
+      typing.id = 'chatTyping';
+      typing.style.cssText = 'align-self:flex-start; font-size:12px; color:var(--gray);';
+      typing.textContent = 'L\'assistant écrit…';
+      chatMessages.appendChild(typing);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+
+      fetch(getBackendUrl() + '/api/support-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: chatHistory })
+      }).then(function(r){ return r.json(); }).then(function(data){
+        var t = document.getElementById('chatTyping');
+        if (t) t.remove();
+        var reply = data.reply || 'Assistant indisponible pour le moment.';
+        renderChatBubble('assistant', reply);
+        chatHistory.push({ role: 'assistant', content: reply });
+      }).catch(function(){
+        var t = document.getElementById('chatTyping');
+        if (t) t.remove();
+        renderChatBubble('assistant', 'Impossible de joindre l\'assistant pour le moment. Réessaie un peu plus tard.');
+      });
+    }
+    document.getElementById('chatSend').addEventListener('click', sendChatMessage);
+    document.getElementById('chatInput').addEventListener('keydown', function(e){
+      if (e.key === 'Enter') sendChatMessage();
+    });
+  }
+})();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('sw.js').catch(function(){ /* pas bloquant si ça échoue */ });
+  });
+}
+</script>
+</body>
+</html>

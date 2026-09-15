@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BeSafe — Admin</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root { --pink: #ec407a; --green: #1a9f6a; --gray: #6b7280; --border: #e5e5e5; --bg: #f7f7f8; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: #1c1c1e; }
+  header { background: #fff; border-bottom: 1px solid var(--border); padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; }
+  header h1 { font-size: 16px; margin: 0; }
+  .count { font-size: 13px; color: var(--gray); }
+  #gate { max-width: 360px; margin: 80px auto; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 24px; text-align: center; }
+  #gate input { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; margin: 12px 0; }
+  #gate button, .btn { padding: 10px 16px; border-radius: 8px; border: none; background: var(--pink); color: #fff; font-size: 14px; cursor: pointer; }
+  #app { display: none; }
+  #map { height: 320px; width: 100%; }
+  table { width: 100%; border-collapse: collapse; background: #fff; }
+  th, td { text-align: left; padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--border); }
+  th { color: var(--gray); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .dot.active { background: var(--green); }
+  .dot.inactive { background: #d1d5db; }
+  .wrap { max-width: 900px; margin: 20px auto; padding: 0 16px; }
+  .section-title { font-size: 13px; color: var(--gray); margin: 24px 0 8px; text-transform: uppercase; letter-spacing: 0.03em; }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <h2 style="margin-top:0;">Accès admin BeSafe</h2>
+  <p style="font-size:13px; color:var(--gray);">Cette page affiche les données de tous les utilisateurs de l'app — accès réservé.</p>
+  <input id="keyInput" type="password" placeholder="Clé d'accès">
+  <button onclick="unlock()">Entrer</button>
+  <p id="gateError" style="color:#e5484d; font-size:12px; display:none;">Clé incorrecte ou serveur injoignable.</p>
+</div>
+
+<div id="app">
+  <header>
+    <h1>BeSafe — Utilisateurs</h1>
+    <span class="count" id="countLabel">…</span>
+  </header>
+  <div id="map"></div>
+  <div class="wrap">
+    <div class="section-title">Incidents et trajets (alertes, sirène)</div>
+    <table>
+      <thead><tr><th>Type</th><th>Utilisateur</th><th>Déclenché</th><th>Clôturé</th><th>Points</th><th></th></tr></thead>
+      <tbody id="incidentRows"></tbody>
+    </table>
+
+    <div class="section-title">Tous les profils enregistrés</div>
+    <table>
+      <thead><tr><th></th><th>Nom</th><th>Téléphone</th><th>Contacts de confiance</th><th>Vu pour la dernière fois</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+  var DEFAULT_BACKEND_URL = 'https://besafe-backend-99a4.onrender.com';
+  var KEY_STORAGE = 'besafe_admin_key';
+  var map, layer;
+
+  function backendUrl(){ return DEFAULT_BACKEND_URL; }
+
+  function unlock(){
+    var key = document.getElementById('keyInput').value.trim();
+    if (!key) return;
+    fetchDevices(key, function(ok){
+      if (ok) {
+        localStorage.setItem(KEY_STORAGE, key);
+        document.getElementById('gate').style.display = 'none';
+        document.getElementById('app').style.display = 'block';
+        initMap();
+        refresh();
+        refreshIncidents();
+        setInterval(refresh, 15000);
+        setInterval(refreshIncidents, 15000);
+      } else {
+        document.getElementById('gateError').style.display = 'block';
+      }
+    });
+  }
+
+  function fetchDevices(key, cb){
+    fetch(backendUrl() + '/api/devices?key=' + encodeURIComponent(key))
+      .then(function(r){ if (!r.ok) throw new Error('unauthorized'); return r.json(); })
+      .then(function(data){ cb(true, data); })
+      .catch(function(){ cb(false); });
+  }
+
+  function initMap(){
+    map = L.map('map').setView([50.8503, 4.3517], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+    layer = L.layerGroup().addTo(map);
+    trailLayer = L.layerGroup().addTo(map);
+  }
+
+  function timeAgo(ts){
+    var diff = Math.round((Date.now() - ts) / 1000);
+    if (diff < 60) return 'à l\'instant';
+    if (diff < 3600) return Math.floor(diff/60) + ' min';
+    if (diff < 86400) return Math.floor(diff/3600) + ' h';
+    return Math.floor(diff/86400) + ' j';
+  }
+
+  function fetchIncidents(key, cb){
+    fetch(backendUrl() + '/api/incidents?key=' + encodeURIComponent(key))
+      .then(function(r){ if (!r.ok) throw new Error('unauthorized'); return r.json(); })
+      .then(function(data){ cb(true, data); })
+      .catch(function(){ cb(false); });
+  }
+
+  var trailLayer;
+  var INCIDENT_LABELS = { alerte_urgence: '🚨 Alerte', alerte_discrete: '🤝 Discrète', sirene: '🔊 Sirène' };
+
+  function showTrail(incident){
+    trailLayer.clearLayers();
+    if (!incident.positions.length) return;
+    var latlngs = incident.positions.map(function(p){ return [p.latitude, p.longitude]; });
+    L.polyline(latlngs, { color: '#ec407a', weight: 4 }).addTo(trailLayer);
+    L.circleMarker(latlngs[0], { radius: 6, color: '#1a9f6a', fillOpacity: 1 }).bindPopup('Départ').addTo(trailLayer);
+    L.circleMarker(latlngs[latlngs.length - 1], { radius: 6, color: '#e5484d', fillOpacity: 1 }).bindPopup('Dernier point').addTo(trailLayer);
+    map.fitBounds(latlngs, { padding: [30, 30] });
+  }
+
+  function refreshIncidents(){
+    var key = localStorage.getItem(KEY_STORAGE);
+    fetchIncidents(key, function(ok, data){
+      if (!ok) return;
+      var rows = document.getElementById('incidentRows');
+      rows.innerHTML = '';
+      (data.incidents || []).forEach(function(inc){
+        var tr = document.createElement('tr');
+        tr.style.cursor = 'pointer';
+        tr.innerHTML =
+          '<td>' + (INCIDENT_LABELS[inc.type] || inc.type) + '</td>' +
+          '<td>' + (inc.user_name || '—') + '</td>' +
+          '<td>' + new Date(inc.started_at).toLocaleString('fr-BE') + '</td>' +
+          '<td>' + (inc.ended_at ? new Date(inc.ended_at).toLocaleString('fr-BE') : '<span style="color:var(--pink);">en cours</span>') + '</td>' +
+          '<td>' + inc.positions.length + '</td>' +
+          '<td><button class="btn" style="padding:6px 10px; font-size:12px;">Voir le trajet</button></td>';
+        tr.querySelector('button').addEventListener('click', function(){ showTrail(inc); });
+        rows.appendChild(tr);
+      });
+    });
+  }
+    var key = localStorage.getItem(KEY_STORAGE);
+    fetchDevices(key, function(ok, data){
+      if (!ok) return;
+      document.getElementById('countLabel').textContent = data.count + ' utilisateur(s) enregistré(s)';
+
+      var rows = document.getElementById('rows');
+      rows.innerHTML = '';
+      data.devices.forEach(function(d){
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td><span class="dot ' + (d.active ? 'active' : 'inactive') + '"></span></td>' +
+          '<td>' + (d.name || 'Sans nom') + '</td>' +
+          '<td>' + (d.phone || '—') + '</td>' +
+          '<td>' + d.contactsCount + '</td>' +
+          '<td>' + timeAgo(d.lastSeen) + '</td>';
+        rows.appendChild(tr);
+      });
+
+      layer.clearLayers();
+      data.devices.filter(function(d){ return d.active && d.latitude != null; }).forEach(function(d){
+        var icon = L.divIcon({
+          className: '',
+          html: '<div style="width:14px;height:14px;border-radius:50%;background:#ec407a;border:2px solid #fff;box-shadow:0 0 0 3px rgba(236,64,122,0.3);"></div>',
+          iconSize: [18,18], iconAnchor: [9,9]
+        });
+        L.marker([d.latitude, d.longitude], { icon: icon }).bindPopup(d.name || 'Sans nom').addTo(layer);
+      });
+    });
+  }
+
+  // Si la clé est déjà enregistrée sur cet appareil, on saute l'écran de saisie.
+  var savedKey = localStorage.getItem(KEY_STORAGE);
+  if (savedKey) {
+    fetchDevices(savedKey, function(ok){
+      if (ok) {
+        document.getElementById('gate').style.display = 'none';
+        document.getElementById('app').style.display = 'block';
+        initMap();
+        refresh();
+        refreshIncidents();
+        setInterval(refresh, 15000);
+        setInterval(refreshIncidents, 15000);
+      }
+    });
+  }
+</script>
+</body>
+</html>
